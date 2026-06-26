@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>1D Barcode Scanner — ZXing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0b0d0f;
+    --panel: #14171a;
+    --panel-2: #181c20;
+    --border: #232831;
+    --text: #e7e5e0;
+    --muted: #8b9097;
+    --laser: #ff3b30;
+    --laser-glow: rgba(255,59,48,0.55);
+    --ok: #2ee6a6;
+    --ok-glow: rgba(46,230,166,0.35);
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body{
+    min-height: 100vh;
+    display:flex;
+    justify-content:center;
+    padding: 32px 16px 64px;
+  }
+  .app{
+    width: 100%;
+    max-width: 720px;
+  }
+  header{
+    margin-bottom: 22px;
+  }
+  .eyebrow{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--laser);
+    text-transform: uppercase;
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .eyebrow .dot{
+    width:6px; height:6px; border-radius:50%;
+    background: var(--muted);
+    display:inline-block;
+  }
+  .eyebrow .dot.live{
+    background: var(--laser);
+    box-shadow: 0 0 8px var(--laser-glow);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ opacity:1; }
+    50%{ opacity:.35; }
+  }
+  h1{
+    font-size: 26px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  p.sub{
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0;
+    line-height: 1.5;
+    max-width: 520px;
+  }
+
+  /* viewport */
+  .viewport-wrap{
+    position: relative;
+    margin-top: 22px;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--border);
+    aspect-ratio: 4 / 3;
+  }
+  video{
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display:block;
+    background:#000;
+  }
+  .frame{
+    position:absolute;
+    inset: 14% 8%;
+    pointer-events:none;
+  }
+  .frame .corner{
+    position:absolute;
+    width: 22px; height: 22px;
+    border: 2px solid rgba(255,255,255,0.55);
+  }
+  .frame .corner.tl{ top:0; left:0; border-right:none; border-bottom:none; }
+  .frame .corner.tr{ top:0; right:0; border-left:none; border-bottom:none; }
+  .frame .corner.bl{ bottom:0; left:0; border-right:none; border-top:none; }
+  .frame .corner.br{ bottom:0; right:0; border-left:none; border-top:none; }
+
+  .laser{
+    position:absolute;
+    left: 8%; right: 8%;
+    top: 14%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--laser) 15%, var(--laser) 85%, transparent);
+    box-shadow: 0 0 10px 1px var(--laser-glow);
+    border-radius: 2px;
+    opacity: 0;
+  }
+  .laser.scanning{
+    opacity: 1;
+    animation: sweep 1.8s cubic-bezier(.4,0,.2,1) infinite;
+  }
+  @keyframes sweep{
+    0%{ top: 14%; }
+    50%{ top: 84%; }
+    100%{ top: 14%; }
+  }
+
+  .flash{
+    position:absolute;
+    inset:0;
+    background: var(--ok);
+    opacity: 0;
+    pointer-events:none;
+  }
+  .flash.hit{
+    animation: flashAnim 360ms ease-out;
+  }
+  @keyframes flashAnim{
+    0%{ opacity: .35; }
+    100%{ opacity: 0; }
+  }
+
+  .viewport-empty{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align:center;
+    padding: 0 24px;
+  }
+  .viewport-empty svg{ opacity: .5; }
+
+  /* controls */
+  .controls{
+    display:flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+    align-items:center;
+  }
+  select, button{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  select{
+    flex: 1;
+    min-width: 160px;
+    appearance: none;
+  }
+  select:focus, button:focus-visible{
+    outline: 2px solid var(--laser);
+    outline-offset: 1px;
+  }
+  button.primary{
+    background: var(--laser);
+    border-color: var(--laser);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover{ background: #e8332a; }
+  button:not(.primary):hover{ border-color: #3a4150; }
+  button:disabled{
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  .status-line{
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    min-height: 16px;
+  }
+  .status-line.error{ color: var(--laser); }
+
+  /* log */
+  .log-header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-top: 34px;
+    margin-bottom: 10px;
+  }
+  .log-header h2{
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin:0;
+    font-weight: 600;
+  }
+  .log-header button{
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .log{
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+  }
+  .entry{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    animation: enter .25s ease-out;
+  }
+  @keyframes enter{
+    from{ opacity:0; transform: translateY(-4px); }
+    to{ opacity:1; transform: translateY(0); }
+  }
+  .entry .badge{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .06em;
+    color: var(--ok);
+    background: var(--ok-glow);
+    border: 1px solid rgba(46,230,166,0.4);
+    padding: 3px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .entry .value{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    flex: 1;
+    word-break: break-all;
+  }
+  .entry .time{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .entry .copy{
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .empty-log{
+    color: var(--muted);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 18px 0;
+    text-align:center;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+  }
+
+  footer{
+    margin-top: 40px;
+    font-size: 11.5px;
+    color: var(--muted);
+    text-align:center;
+    line-height: 1.6;
+  }
+  footer a{ color: var(--muted); }
+
+  @media (prefers-reduced-motion: reduce){
+    .laser.scanning{ animation: none; opacity: .8; }
+    .eyebrow .dot.live{ animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="eyebrow"><span class="dot" id="liveDot"></span><span id="eyebrowText">SCANNER IDLE</span></div>
+    <h1>1D Barcode Scanner</h1>
+    <p class="sub">Reads UPC, EAN, Code 128, Code 39, Code 93, Codabar and ITF barcodes straight from your camera, using the ZXing decoding engine. Nothing leaves your browser.</p>
+  </header>
+
+  <div class="viewport-wrap" id="viewportWrap">
+    <video id="video" playsinline muted></video>
+    <div class="viewport-empty" id="viewportEmpty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5a2 2 0 0 1 2-2h2M3 17v2a2 2 0 0 0 2 2h2M21 7V5a2 2 0 0 0-2-2h-2M21 17v2a2 2 0 0 1-2 2h-2M7 8v8M11 8v8M14 8v8M17 8v8"/></svg>
+      <span>Camera off — press Start scanning</span>
+    </div>
+    <div class="frame">
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+    </div>
+    <div class="laser" id="laser"></div>
+    <div class="flash" id="flash"></div>
+  </div>
+
+  <div class="controls">
+    <select id="deviceSelect" disabled><option>Default camera</option></select>
+    <button class="primary" id="startBtn">Start scanning</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+  <div class="status-line" id="statusLine">Ready. Click "Start scanning" and allow camera access.</div>
+
+  <div class="log-header">
+    <h2>Scan log</h2>
+    <button id="clearBtn">Clear</button>
+  </div>
+  <div class="log" id="log">
+    <div class="empty-log" id="emptyLog">No scans yet — results will appear here</div>
+  </div>
+
+  <footer>
+    Powered by <a href="https://github.com/zxing-js/library" target="_blank" rel="noopener">zxing-js/library</a>.
+    Camera access requires a secure context (https:// or localhost) and browser permission.
+  </footer>
+</div>
+
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+(function(){
+  const els = {
+    video: document.getElementById('video'),
+    viewportEmpty: document.getElementById('viewportEmpty'),
+    laser: document.getElementById('laser'),
+    flash: document.getElementById('flash'),
+    deviceSelect: document.getElementById('deviceSelect'),
+    startBtn: document.getElementById('startBtn'),
+    stopBtn: document.getElementById('stopBtn'),
+    statusLine: document.getElementById('statusLine'),
+    log: document.getElementById('log'),
+    emptyLog: document.getElementById('emptyLog'),
+    clearBtn: document.getElementById('clearBtn'),
+    liveDot: document.getElementById('liveDot'),
+    eyebrowText: document.getElementById('eyebrowText'),
+  };
+
+  if (typeof ZXing === 'undefined') {
+    setStatus('Could not load the ZXing library from the CDN. Check your internet connection and reload.', true);
+    els.startBtn.disabled = true;
+  }
+
+  // Restrict to 1D formats only.
+  const ONE_D_FORMATS = [
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.CODE_93,
+    ZXing.BarcodeFormat.CODABAR,
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.UPC_EAN_EXTENSION,
+    ZXing.BarcodeFormat.RSS_14,
+    ZXing.BarcodeFormat.RSS_EXPANDED,
+  ];
+
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, ONE_D_FORMATS);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+  const codeReader = new ZXing.BrowserMultiFormatReader(hints);
+
+  let scanning = false;
+  let lastValue = null;
+  let lastTime = 0;
+
+  function formatName(formatEnum){
+    const entry = Object.keys(ZXing.BarcodeFormat).find(
+      k => ZXing.BarcodeFormat[k] === formatEnum
+    );
+    return entry || 'UNKNOWN';
+  }
+
+  function setStatus(msg, isError){
+    els.statusLine.textContent = msg;
+    els.statusLine.classList.toggle('error', !!isError);
+  }
+
+  function setScanningUI(isScanning){
+    scanning = isScanning;
+    els.laser.classList.toggle('scanning', isScanning);
+    els.viewportEmpty.style.display = isScanning ? 'none' : 'flex';
+    els.startBtn.disabled = isScanning;
+    els.stopBtn.disabled = !isScanning;
+    els.deviceSelect.disabled = isScanning;
+    els.liveDot.classList.toggle('live', isScanning);
+    els.eyebrowText.textContent = isScanning ? 'SCANNING' : 'SCANNER IDLE';
+  }
+
+  function beep(){
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 1800;
+      gain.gain.value = 0.05;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+      osc.onended = () => ctx.close();
+    }catch(e){ /* audio not available, ignore */ }
+  }
+
+  function flashHit(){
+    els.flash.classList.remove('hit');
+    // restart animation
+    void els.flash.offsetWidth;
+    els.flash.classList.add('hit');
+  }
+
+  function addLogEntry(text, format){
+    els.emptyLog.style.display = 'none';
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    entry.innerHTML = `
+      <span class="badge">${format.replace(/_/g, ' ')}</span>
+      <span class="value"></span>
+      <span class="time">${time}</span>
+      <button class="copy">Copy</button>
+    `;
+    entry.querySelector('.value').textContent = text;
+    entry.querySelector('.copy').addEventListener('click', () => {
+      navigator.clipboard?.writeText(text).then(() => {
+        const btn = entry.querySelector('.copy');
+        const original = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = original; }, 1200);
+      });
+    });
+    els.log.prepend(entry);
+  }
+
+  function handleResult(result){
+    const text = result.getText();
+    const format = formatName(result.getBarcodeFormat());
+    const now = Date.now();
+    // Debounce identical consecutive scans within 1.5s
+    if (text === lastValue && now - lastTime < 1500) return;
+    lastValue = text;
+    lastTime = now;
+
+    flashHit();
+    beep();
+    if (navigator.vibrate) navigator.vibrate(60);
+    addLogEntry(text, format);
+    setStatus(`Last scan: ${text} (${format.replace(/_/g, ' ')})`);
+  }
+
+  async function populateDevices(){
+    try{
+      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+      els.deviceSelect.innerHTML = '';
+      if (!devices.length){
+        const opt = document.createElement('option');
+        opt.textContent = 'No camera found';
+        els.deviceSelect.appendChild(opt);
+        return;
+      }
+      devices.forEach((d, i) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Camera ${i + 1}`;
+        els.deviceSelect.appendChild(opt);
+      });
+      // Prefer a back/environment camera if labelled as such
+      const back = devices.find(d => /back|rear|environment/i.test(d.label));
+      if (back) els.deviceSelect.value = back.deviceId;
+    }catch(e){
+      // Labels may be empty until permission is granted; that's fine.
+    }
+  }
+
+  async function start(){
+    setStatus('Requesting camera access…');
+    try{
+      const deviceId = els.deviceSelect.value || undefined;
+      setScanningUI(true);
+      await codeReader.decodeFromVideoDevice(deviceId, els.video, (result, err) => {
+        if (result){
+          handleResult(result);
+        } else if (err && !(err instanceof ZXing.NotFoundException)){
+          // Real decode errors (not just "nothing found this frame")
+          console.warn(err);
+        }
+      });
+      setStatus('Scanning — point the camera at a barcode.');
+      populateDevices(); // refresh labels now that permission is granted
+    }catch(err){
+      setScanningUI(false);
+      console.error(err);
+      if (err && err.name === 'NotAllowedError'){
+        setStatus('Camera access was denied. Allow camera permission and try again.', true);
+      } else if (err && err.name === 'NotFoundError'){
+        setStatus('No camera was found on this device.', true);
+      } else {
+        setStatus('Could not start the camera: ' + (err?.message || err), true);
+      }
+    }
+  }
+
+  function stop(){
+    codeReader.reset();
+    setScanningUI(false);
+    setStatus('Stopped. Press "Start scanning" to resume.');
+  }
+
+  els.startBtn.addEventListener('click', start);
+  els.stopBtn.addEventListener('click', stop);
+  els.clearBtn.addEventListener('click', () => {
+    els.log.innerHTML = '';
+    els.log.appendChild(els.emptyLog);
+    els.emptyLog.style.display = 'block';
+  });
+
+  // Best-effort: list devices on load (labels will be blank pre-permission)
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+    populateDevices();
+  } else {
+    setStatus('This browser does not support camera access (getUserMedia).', true);
+    els.startBtn.disabled = true;
+  }
+
+  window.addEventListener('beforeunload', () => { try{ codeReader.reset(); }catch(e){} });
+})();
+</script>
+</body>
+</html>
