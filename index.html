@@ -394,6 +394,7 @@
   let scanning = false;
   let lastValue = null;
   let lastTime = 0;
+  let knownDeviceIds = [];
 
   function formatName(formatEnum){
     const entry = Object.keys(ZXing.BarcodeFormat).find(
@@ -484,20 +485,30 @@
     try{
       const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
       els.deviceSelect.innerHTML = '';
-      if (!devices.length){
-        const opt = document.createElement('option');
-        opt.textContent = 'No camera found';
-        els.deviceSelect.appendChild(opt);
+      // Always start with an explicit "auto" option so a placeholder's
+      // text content can never be mistaken for a real deviceId constraint.
+      const autoOpt = document.createElement('option');
+      autoOpt.value = '';
+      autoOpt.textContent = 'Auto (back camera)';
+      els.deviceSelect.appendChild(autoOpt);
+
+      knownDeviceIds = devices.map(d => d.deviceId).filter(Boolean);
+
+      if (!devices.length || !knownDeviceIds.length){
+        // No enumerable devices yet (common on iOS Safari pre-permission).
+        // Leave only the "Auto" option; real devices appear after the
+        // first successful camera start, once permission is granted.
         return;
       }
       devices.forEach((d, i) => {
+        if (!d.deviceId) return;
         const opt = document.createElement('option');
         opt.value = d.deviceId;
         opt.textContent = d.label || `Camera ${i + 1}`;
         els.deviceSelect.appendChild(opt);
       });
       // Prefer a back/environment camera if labelled as such
-      const back = devices.find(d => /back|rear|environment/i.test(d.label));
+      const back = devices.find(d => d.deviceId && /back|rear|environment/i.test(d.label));
       if (back) els.deviceSelect.value = back.deviceId;
     }catch(e){
       // Labels may be empty until permission is granted; that's fine.
@@ -507,7 +518,8 @@
   async function start(){
     setStatus('Requesting camera access…');
     try{
-      const deviceId = els.deviceSelect.value || undefined;
+      const selected = els.deviceSelect.value;
+      const deviceId = (selected && knownDeviceIds.includes(selected)) ? selected : undefined;
       setScanningUI(true);
       await codeReader.decodeFromVideoDevice(deviceId, els.video, (result, err) => {
         if (result){
@@ -545,6 +557,9 @@
     els.log.appendChild(els.emptyLog);
     els.emptyLog.style.display = 'block';
   });
+
+  // Sync initial UI state (enables the device picker before first scan).
+  setScanningUI(false);
 
   // Best-effort: list devices on load (labels will be blank pre-permission)
   if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
